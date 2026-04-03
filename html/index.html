@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MULTI-COIN SCALPER TESTER | 4 Coins · $100 Each</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0b0b0f;
+      font-family: 'Courier New', monospace;
+      color: #ededee;
+      padding: 1rem;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #222;
+    }
+    .title h1 { font-size: 1.3rem; background: linear-gradient(135deg, #F7931A, #00FFAA, #627EEA, #F3BA2F); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .badge { background: #1D9E7522; border: 1px solid #1D9E75; padding: 0.3rem 1rem; border-radius: 60px; font-size: 0.7rem; }
+    .pulse { width: 8px; height: 8px; background: #1D9E75; border-radius: 50%; display: inline-block; animation: pulse 1s infinite; }
+    @keyframes pulse { 0% { opacity: 0.3; } 100% { opacity: 1; } }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid #222;
+    }
+    .tab-btn {
+      background: #111216;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      cursor: pointer;
+      color: #888;
+      font-family: monospace;
+      font-weight: bold;
+      border-radius: 1rem 1rem 0 0;
+    }
+    .tab-btn.active {
+      background: #1a1c26;
+      color: #00FFAA;
+      border-bottom: 2px solid #00FFAA;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    
+    .coin-card {
+      background: #111216;
+      border: 1px solid #24262e;
+      border-radius: 1rem;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .coin-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #222;
+    }
+    .coin-name { font-size: 1.3rem; font-weight: bold; }
+    .coin-price { font-size: 1.1rem; font-family: monospace; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.8rem;
+      margin-bottom: 1rem;
+    }
+    .stat {
+      background: #0a0a0e;
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+      text-align: center;
+    }
+    .stat-label { font-size: 0.6rem; color: #888; }
+    .stat-value { font-size: 1.2rem; font-weight: bold; }
+    .profit-positive { color: #00FFAA; }
+    .profit-negative { color: #E24B4A; }
+    .progress-bar {
+      height: 4px;
+      background: #24262e;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+    .progress-fill { height: 100%; width: 0%; transition: width 0.2s; }
+    .log-box {
+      height: 150px;
+      overflow-y: auto;
+      font-size: 0.65rem;
+      background: #0a0a0e;
+      border-radius: 0.5rem;
+      padding: 0.4rem;
+    }
+    .log-entry { border-bottom: 1px solid #1a1c22; padding: 3px 0; }
+    .controls {
+      margin-top: 1rem;
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    button {
+      background: #1c1d24;
+      border: 1px solid #333;
+      padding: 0.4rem 1rem;
+      border-radius: 1rem;
+      cursor: pointer;
+      color: white;
+    }
+    .footer { text-align: center; font-size: 0.6rem; color: #555; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="title"><h1>🧪 MULTI-COIN SCALPER TESTER</h1><p>4 coins · $100 each · 4 hour hold · real Binance data</p></div>
+    <div class="badge"><span class="pulse"></span> LIVE · COMPARE PERFORMANCE</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-coin="BTC">₿ BITCOIN (0.4%)</button>
+    <button class="tab-btn" data-coin="SOL">☀️ SOLANA (0.6%)</button>
+    <button class="tab-btn" data-coin="ETH">⟠ ETHEREUM (0.5%)</button>
+    <button class="tab-btn" data-coin="DOGE">🐕 DOGECOIN (0.8%)</button>
+  </div>
+
+  <!-- BTC TAB -->
+  <div id="tab-BTC" class="tab-content active">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">₿ BITCOIN</span><span class="coin-price" id="btc-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">WORKING CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.4%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT → MAIN</div><div class="stat-value" id="btc-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="btc-wr">—</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="btc-progress" style="background:#F7931A;"></div></div>
+      <div class="log-box" id="btc-log"><div>🟢 BTC bot ready · 4h hold</div></div>
+    </div>
+  </div>
+
+  <!-- SOL TAB -->
+  <div id="tab-SOL" class="tab-content">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">☀️ SOLANA</span><span class="coin-price" id="sol-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">WORKING CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.6%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT → MAIN</div><div class="stat-value" id="sol-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="sol-wr">—</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="sol-progress" style="background:#00FFAA;"></div></div>
+      <div class="log-box" id="sol-log"><div>🟢 SOL bot ready · 4h hold</div></div>
+    </div>
+  </div>
+
+  <!-- ETH TAB -->
+  <div id="tab-ETH" class="tab-content">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">⟠ ETHEREUM</span><span class="coin-price" id="eth-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">WORKING CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.5%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT → MAIN</div><div class="stat-value" id="eth-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="eth-wr">—</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="eth-progress" style="background:#627EEA;"></div></div>
+      <div class="log-box" id="eth-log"><div>🟢 ETH bot ready · 4h hold</div></div>
+    </div>
+  </div>
+
+  <!-- DOGE TAB -->
+  <div id="tab-DOGE" class="tab-content">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">🐕 DOGECOIN</span><span class="coin-price" id="doge-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">WORKING CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.8%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT → MAIN</div><div class="stat-value" id="doge-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="doge-wr">—</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="doge-progress" style="background:#F3BA2F;"></div></div>
+      <div class="log-box" id="doge-log"><div>🟢 DOGE bot ready · 4h hold</div></div>
+    </div>
+  </div>
+
+  <div class="controls"><button id="pauseAllBtn">⏸️ PAUSE ALL</button> <button id="resetAllBtn">⟳ RESET ALL</button></div>
+  <div class="footer">⚡ Each bot: $100 fixed capital | 4 hour hold | profit to separate main account | real Binance WebSocket</div>
+</div>
+
+<script>
+  // Configuration for each coin
+  const WORKING_CAPITAL = 100;
+  const TRADE_FEE = 0.00175;
+  const SPREAD = 0.0002;
+  const HOLD_MS = 4 * 3600000; // 4 hours
+
+  const COINS = {
+    BTC: { symbol: 'btcusdt', name: 'BTC', target: 0.004, color: '#F7931A', targetPct: 0.4 },
+    SOL: { symbol: 'solusdt', name: 'SOL', target: 0.006, color: '#00FFAA', targetPct: 0.6 },
+    ETH: { symbol: 'ethusdt', name: 'ETH', target: 0.005, color: '#627EEA', targetPct: 0.5 },
+    DOGE: { symbol: 'dogeusdt', name: 'DOGE', target: 0.008, color: '#F3BA2F', targetPct: 0.8 }
+  };
+
+  // State for each coin
+  let states = {};
+  let wsConnections = {};
+  let allRunning = true;
+  let globalPauseBtn = document.getElementById('pauseAllBtn');
+  let resetBtn = document.getElementById('resetAllBtn');
+
+  function initCoin(coinId) {
+    const cfg = COINS[coinId];
+    const netProfitOnTarget = (WORKING_CAPITAL * cfg.target) - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
+    
+    states[coinId] = {
+      totalProfit: 0,
+      totalTrades: 0,
+      totalWins: 0,
+      tradeActive: false,
+      entryPrice: 0,
+      targetPrice: 0,
+      tradeStartTime: 0,
+      price: 100,
+      monitorInterval: null,
+      timerInterval: null,
+      nextTradeTimeout: null,
+      netProfitPerWin: netProfitOnTarget,
+      logEntries: []
+    };
+  }
+
+  function addLog(coinId, msg, isWin = null) {
+    const time = new Date().toLocaleTimeString();
+    const cls = isWin === true ? 'log-win' : (isWin === false ? 'log-loss' : '');
+    const entry = `<div class="log-entry ${cls}">[${time}] ${msg}</div>`;
+    states[coinId].logEntries.unshift(entry);
+    if (states[coinId].logEntries.length > 30) states[coinId].logEntries.pop();
+    const logBox = document.getElementById(`${coinId.toLowerCase()}-log`);
+    if (logBox) logBox.innerHTML = states[coinId].logEntries.join('');
+  }
+
+  function updateUI(coinId) {
+    const s = states[coinId];
+    const profitSpan = document.getElementById(`${coinId.toLowerCase()}-profit`);
+    const wrSpan = document.getElementById(`${coinId.toLowerCase()}-wr`);
+    const progressFill = document.getElementById(`${coinId.toLowerCase()}-progress`);
+    if (profitSpan) profitSpan.innerText = `$${s.totalProfit.toFixed(2)}`;
+    if (wrSpan) wrSpan.innerText = s.totalTrades > 0 ? ((s.totalWins/s.totalTrades)*100).toFixed(1)+'%' : '—';
+    if (progressFill) {
+      const prog = Math.min(100, (s.totalTrades / 200) * 100);
+      progressFill.style.width = `${prog}%`;
+    }
+  }
+
+  function closeTrade(coinId, win, priceAtClose, profitAmount) {
+    const s = states[coinId];
+    if (!s.tradeActive) return;
+    s.tradeActive = false;
+    if (s.monitorInterval) clearInterval(s.monitorInterval);
+    if (s.timerInterval) clearInterval(s.timerInterval);
+    
+    s.totalProfit += profitAmount;
+    if (win) s.totalWins++;
+    s.totalTrades++;
+    updateUI(coinId);
+    addLog(coinId, `${win ? '✅ WIN' : '❌ LOSS'} → $${Math.abs(profitAmount).toFixed(3)} @ $${priceAtClose.toFixed(4)} | total: $${s.totalProfit.toFixed(2)}`, win);
+    
+    // Schedule next trade (5-15 min later)
+    if (s.nextTradeTimeout) clearTimeout(s.nextTradeTimeout);
+    s.nextTradeTimeout = setTimeout(() => {
+      if (allRunning && !s.tradeActive) startTrade(coinId);
+    }, 300000 + Math.random() * 600000);
+  }
+
+  function startTrade(coinId) {
+    const s = states[coinId];
+    const cfg = COINS[coinId];
+    if (!allRunning || s.tradeActive) return;
+    if (s.price < 1) {
+      setTimeout(() => startTrade(coinId), 5000);
+      return;
+    }
+    s.entryPrice = s.price;
+    s.targetPrice = s.entryPrice * (1 + cfg.target);
+    s.tradeActive = true;
+    s.tradeStartTime = Date.now();
+    addLog(coinId, `🟢 BUY @ $${s.entryPrice.toFixed(4)} | TARGET: $${s.targetPrice.toFixed(4)} (+${cfg.targetPct}%) | HOLD: 4h`);
+    
+    // Timer display update
+    s.timerInterval = setInterval(() => {
+      if (!s.tradeActive) return;
+      const elapsed = Date.now() - s.tradeStartTime;
+      const hours = Math.floor(elapsed / 3600000);
+      const mins = Math.floor((elapsed % 3600000) / 60000);
+    }, 1000);
+    
+    // Monitor price
+    s.monitorInterval = setInterval(() => {
+      if (!s.tradeActive || !allRunning) return;
+      if (s.price >= s.targetPrice) {
+        clearInterval(s.monitorInterval);
+        clearInterval(s.timerInterval);
+        closeTrade(coinId, true, s.price, s.netProfitPerWin);
+      }
+      else if (Date.now() - s.tradeStartTime >= HOLD_MS) {
+        clearInterval(s.monitorInterval);
+        clearInterval(s.timerInterval);
+        const actualMove = (s.price - s.entryPrice) / s.entryPrice;
+        let profit = 0;
+        if (actualMove > 0) {
+          const gross = WORKING_CAPITAL * Math.min(actualMove, cfg.target);
+          profit = gross - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
+        } else {
+          const grossLoss = WORKING_CAPITAL * Math.abs(actualMove);
+          profit = -(grossLoss + (WORKING_CAPITAL * TRADE_FEE) + (WORKING_CAPITAL * SPREAD));
+        }
+        addLog(coinId, `⏰ 4 HOURS COMPLETE → market exit at $${s.price.toFixed(4)}`, profit > 0);
+        closeTrade(coinId, profit > 0, s.price, profit);
+      }
+    }, 2000);
+  }
+
+  // WebSocket for each coin
+  function connectWebSocket(coinId) {
+    const cfg = COINS[coinId];
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${cfg.symbol}@trade`);
+    ws.onopen = () => { addLog(coinId, '🟢 WebSocket connected'); };
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.p) {
+          const newPrice = parseFloat(data.p);
+          if (newPrice > 0) {
+            states[coinId].price = newPrice;
+            const priceSpan = document.getElementById(`${coinId.toLowerCase()}-price`);
+            if (priceSpan) priceSpan.innerText = `$${newPrice.toFixed(4)}`;
+          }
+        }
+      } catch(err) {}
+    };
+    ws.onclose = () => setTimeout(() => connectWebSocket(coinId), 3000);
+    return ws;
+  }
+
+  function pauseAll() {
+    allRunning = false;
+    globalPauseBtn.innerText = '▶️ RESUME ALL';
+    for (let coinId of Object.keys(COINS)) {
+      const s = states[coinId];
+      if (s.monitorInterval) clearInterval(s.monitorInterval);
+      if (s.timerInterval) clearInterval(s.timerInterval);
+      addLog(coinId, '⏸️ Paused');
+    }
+  }
+
+  function resumeAll() {
+    allRunning = true;
+    globalPauseBtn.innerText = '⏸️ PAUSE ALL';
+    for (let coinId of Object.keys(COINS)) {
+      const s = states[coinId];
+      if (!s.tradeActive) startTrade(coinId);
+      addLog(coinId, '▶️ Resumed');
+    }
+  }
+
+  function resetAll() {
+    allRunning = true;
+    globalPauseBtn.innerText = '⏸️ PAUSE ALL';
+    for (let coinId of Object.keys(COINS)) {
+      const s = states[coinId];
+      if (s.monitorInterval) clearInterval(s.monitorInterval);
+      if (s.timerInterval) clearInterval(s.timerInterval);
+      if (s.nextTradeTimeout) clearTimeout(s.nextTradeTimeout);
+      s.totalProfit = 0;
+      s.totalTrades = 0;
+      s.totalWins = 0;
+      s.tradeActive = false;
+      s.logEntries = [];
+      updateUI(coinId);
+      addLog(coinId, '🔄 RESET — starting fresh');
+      setTimeout(() => { if (allRunning) startTrade(coinId); }, 2000);
+    }
+  }
+
+  // Tab switching
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const coin = btn.dataset.coin;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      document.getElementById(`tab-${coin}`).classList.add('active');
+    });
+  });
+
+  // Initialize all coins
+  for (let coinId of Object.keys(COINS)) {
+    initCoin(coinId);
+    wsConnections[coinId] = connectWebSocket(coinId);
+    setTimeout(() => startTrade(coinId), 3000);
+  }
+
+  globalPauseBtn.onclick = () => { if (allRunning) pauseAll(); else resumeAll(); };
+  resetBtn.onclick = () => resetAll();
+</script>
+</body>
+</html>
