@@ -1,0 +1,10 @@
+{
+  "name": "crypto-scalper-bot",
+  "version": "1.0.0",
+  "description": "24/7 BTC scalper with 4h hold",
+  "main": "index.js",
+  "dependencies": {
+    "ws": "^8.14.2",
+    "express": "^4.18.2"
+  }
+}
