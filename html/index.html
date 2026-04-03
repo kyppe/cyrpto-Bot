@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>📊 SCALPER ANALYZER · BTC · 0.4% Target · Full Trade Log</title>
+  <title>📊 MULTI-COIN SCALPER · FULL TRADE LOGGER · 4 COINS</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -13,7 +13,7 @@
       color: #ededee;
       padding: 1rem;
     }
-    .container { max-width: 1300px; margin: 0 auto; }
+    .container { max-width: 1400px; margin: 0 auto; }
     .header {
       display: flex;
       justify-content: space-between;
@@ -23,377 +23,477 @@
       padding-bottom: 0.5rem;
       border-bottom: 1px solid #222;
     }
-    .title h1 { font-size: 1.3rem; color: #F7931A; }
+    .title h1 { font-size: 1.3rem; background: linear-gradient(135deg, #F7931A, #00FFAA, #627EEA, #F3BA2F); -webkit-background-clip: text; background-clip: text; color: transparent; }
     .badge { background: #1D9E7522; border: 1px solid #1D9E75; padding: 0.2rem 0.8rem; border-radius: 60px; font-size: 0.7rem; }
-    .grid-4 {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 0.8rem;
-      margin-bottom: 1rem;
-    }
-    .card { background: #111216; border: 1px solid #24262e; border-radius: 0.8rem; padding: 0.8rem; }
-    .card-value { font-size: 1.5rem; font-weight: bold; }
-    .text-btc { color: #F7931A; }
-    .profit-positive { color: #00FFAA; }
-    .profit-negative { color: #E24B4A; }
-    .info-bar {
-      background: #111216;
-      border-radius: 1rem;
-      padding: 0.6rem 1rem;
-      margin-bottom: 1rem;
+    
+    /* Tabs */
+    .tabs {
       display: flex;
       flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #222;
+    }
+    .tab-btn {
+      background: #111216;
+      border: none;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      color: #888;
+      font-family: monospace;
+      font-weight: bold;
+      border-radius: 0.8rem 0.8rem 0 0;
+    }
+    .tab-btn.active {
+      background: #1a1c26;
+      color: #00FFAA;
+      border-bottom: 2px solid #00FFAA;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    .coin-card {
+      background: #111216;
+      border: 1px solid #24262e;
+      border-radius: 1rem;
+      padding: 0.8rem;
+      margin-bottom: 1rem;
+    }
+    .coin-header {
+      display: flex;
       justify-content: space-between;
       align-items: center;
+      margin-bottom: 0.8rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #222;
+    }
+    .coin-name { font-size: 1.2rem; font-weight: bold; }
+    .coin-price { font-size: 1rem; font-family: monospace; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
       gap: 0.5rem;
+      margin-bottom: 0.8rem;
+    }
+    .stat {
+      background: #0a0a0e;
+      padding: 0.4rem;
+      border-radius: 0.5rem;
+      text-align: center;
+    }
+    .stat-label { font-size: 0.55rem; color: #888; }
+    .stat-value { font-size: 1rem; font-weight: bold; }
+    .profit-positive { color: #00FFAA; }
+    .profit-negative { color: #E24B4A; }
+    .progress-bar {
+      height: 3px;
+      background: #24262e;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 0.4rem;
+    }
+    .progress-fill { height: 100%; width: 0%; transition: width 0.2s; }
+    .log-box {
+      height: 180px;
+      overflow-y: auto;
+      font-size: 0.6rem;
+      background: #0a0a0e;
+      border-radius: 0.5rem;
+      padding: 0.4rem;
+    }
+    .log-win { color: #00FFAA; }
+    .log-loss { color: #E24B4A; }
+    
+    .controls {
+      margin: 1rem 0;
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
     }
     button {
       background: #1c1d24;
       border: 1px solid #333;
-      padding: 0.3rem 0.8rem;
+      padding: 0.4rem 1rem;
       border-radius: 1rem;
       cursor: pointer;
       color: white;
     }
     .btn-export { background: #2a2c35; border-color: #F7931A; }
-    .two-columns { display: flex; flex-wrap: wrap; gap: 1rem; }
-    .col { flex: 1.5; min-width: 250px; }
-    .col:last-child { flex: 1; }
-    .panel { background: #101116; border: 1px solid #24262e; border-radius: 1rem; padding: 0.8rem; margin-bottom: 1rem; }
-    .btc-price { font-size: 1.6rem; font-weight: bold; color: #F7931A; text-align: center; }
-    .log-box { max-height: 280px; overflow-y: auto; font-size: 0.65rem; background: #0a0a0e; border-radius: 0.8rem; padding: 0.4rem; }
-    .log-win { color: #00FFAA; }
-    .log-loss { color: #E24B4A; }
     .footer { text-align: center; font-size: 0.6rem; color: #555; margin-top: 1rem; }
   </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
-    <div class="title"><h1>₿ BTC SCALPER · FULL TRADE LOGGER</h1><p>0.4% target | 4h hold | real Binance data</p></div>
+    <div class="title"><h1>📊 MULTI-COIN SCALPER · FULL LOGGER</h1><p>4 coins · 4h hold · real Binance data · export all trades</p></div>
     <div class="badge"><span id="liveDot">●</span> LIVE · logging every trade</div>
   </div>
 
-  <div class="grid-4">
-    <div class="card"><div class="card-label">💰 WORKING CAPITAL</div><div class="card-value text-btc">$100</div></div>
-    <div class="card"><div class="card-label">🏆 TOTAL PROFIT</div><div class="card-value" id="totalProfit">$0.00</div></div>
-    <div class="card"><div class="card-label">📊 TRADES</div><div class="card-value" id="tradeCount">0</div></div>
-    <div class="card"><div class="card-label">✅ WIN RATE</div><div class="card-value" id="winRate">—</div></div>
+  <div class="tabs">
+    <button class="tab-btn active" data-coin="BTC">₿ BTC (0.4%)</button>
+    <button class="tab-btn" data-coin="SOL">☀️ SOL (0.6%)</button>
+    <button class="tab-btn" data-coin="ETH">⟠ ETH (0.5%)</button>
+    <button class="tab-btn" data-coin="DOGE">🐕 DOGE (0.8%)</button>
   </div>
 
-  <div class="info-bar">
-    <div>🎯 Target: <strong>0.4%</strong> | ⏱️ Max hold: <strong>4 hours</strong></div>
-    <div><button id="pauseBtn">⏸️ PAUSE</button> <button id="resetBtn" style="border-color:#E24B4A;">⟳ RESET</button> <button id="exportBtn" class="btn-export">📥 EXPORT JSON</button></div>
+  <!-- BTC TAB -->
+  <div id="tab-BTC" class="tab-content active">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">₿ BITCOIN</span><span class="coin-price" id="btc-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.4%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT</div><div class="stat-value" id="btc-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="btc-wr">—</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="btc-progress" style="background:#F7931A;"></div></div>
+      <div class="log-box" id="btc-log"><div>🟢 BTC bot ready · 4h hold</div></div>
+    </div>
   </div>
 
-  <div class="two-columns">
-    <div class="col">
-      <div class="panel"><canvas id="gainsChart" height="150"></canvas></div>
-      <div class="panel">
-        <div class="btc-price" id="btcPrice">loading...</div>
-        <div style="text-align:center; font-size:0.7rem;">Binance WebSocket · real-time</div>
+  <!-- SOL TAB -->
+  <div id="tab-SOL" class="tab-content">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">☀️ SOLANA</span><span class="coin-price" id="sol-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.6%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT</div><div class="stat-value" id="sol-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="sol-wr">—</div></div>
       </div>
-    </div>
-    <div class="col">
-      <div class="panel">
-        <div class="log-box" id="logBox">
-          <div>🟢 Bot ready — every trade will be logged for analysis</div>
-          <div>📁 Click "EXPORT JSON" to download full trade history</div>
-        </div>
-      </div>
-      <div class="panel">
-        <div style="font-size:0.7rem; line-height:1.4;">
-          ✅ <strong>Logged data for each trade:</strong><br>
-          • Entry price, target price, exit price<br>
-          • Profit/loss (after fees: 0.175% + 0.02% spread)<br>
-          • Win/loss outcome & duration<br>
-          • Timestamp (ISO) & coin (BTC)<br>
-          • Cumulative totals<br>
-          → Export as JSON for Excel / Python analysis
-        </div>
-      </div>
+      <div class="progress-bar"><div class="progress-fill" id="sol-progress" style="background:#00FFAA;"></div></div>
+      <div class="log-box" id="sol-log"><div>🟢 SOL bot ready · 4h hold</div></div>
     </div>
   </div>
-  <div class="footer">⚡ Every trade recorded. Export JSON to analyze performance.</div>
+
+  <!-- ETH TAB -->
+  <div id="tab-ETH" class="tab-content">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">⟠ ETHEREUM</span><span class="coin-price" id="eth-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.5%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT</div><div class="stat-value" id="eth-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="eth-wr">—</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="eth-progress" style="background:#627EEA;"></div></div>
+      <div class="log-box" id="eth-log"><div>🟢 ETH bot ready · 4h hold</div></div>
+    </div>
+  </div>
+
+  <!-- DOGE TAB -->
+  <div id="tab-DOGE" class="tab-content">
+    <div class="coin-card">
+      <div class="coin-header"><span class="coin-name">🐕 DOGECOIN</span><span class="coin-price" id="doge-price">loading...</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">CAPITAL</div><div class="stat-value">$100</div></div>
+        <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value">0.8%</div></div>
+        <div class="stat"><div class="stat-label">PROFIT</div><div class="stat-value" id="doge-profit">$0.00</div></div>
+        <div class="stat"><div class="stat-label">WIN RATE</div><div class="stat-value" id="doge-wr">—</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="doge-progress" style="background:#F3BA2F;"></div></div>
+      <div class="log-box" id="doge-log"><div>🟢 DOGE bot ready · 4h hold</div></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="pauseAllBtn">⏸️ PAUSE ALL</button>
+    <button id="resetAllBtn">⟳ RESET ALL</button>
+    <button id="exportAllBtn" class="btn-export">📥 EXPORT ALL TRADES (JSON)</button>
+  </div>
+  <div class="footer">⚡ Each coin: $100 capital | 4h max hold | profit/loss after fees (0.175% + 0.02% spread) | All trades logged → Export JSON for analysis</div>
 </div>
 
 <script>
-  // ================= CONFIG =================
-  const WORKING_CAPITAL = 100.00;
+  // ================= CONFIGURATION =================
+  const WORKING_CAPITAL = 100;
   const TRADE_FEE = 0.00175;
   const SPREAD = 0.0002;
-  const TARGET_PCT = 0.004;      // 0.4%
-  const HOLD_MS = 4 * 3600000;    // 4 hours
+  const HOLD_MS = 4 * 3600000;
 
-  const NET_PROFIT_ON_TARGET = (WORKING_CAPITAL * TARGET_PCT) - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
-  
-  // ================= TRADE LOG (will be exported) =================
-  let tradeHistory = [];   // array of objects
-  let totalProfit = 0;
-  let totalTrades = 0;
-  let totalWins = 0;
-  
-  // Bot state
-  let isRunning = true;
-  let tradeActive = false;
-  let entryPrice = 0;
-  let targetPrice = 0;
-  let tradeStartTime = 0;
-  let monitorInterval = null;
-  let timerInterval = null;
-  let nextTradeTimeout = null;
-  let btcPrice = 67000;
-  
+  const COINS = {
+    BTC: { symbol: 'btcusdt', name: 'BTC', target: 0.004, targetPct: 0.4, color: '#F7931A' },
+    SOL: { symbol: 'solusdt', name: 'SOL', target: 0.006, targetPct: 0.6, color: '#00FFAA' },
+    ETH: { symbol: 'ethusdt', name: 'ETH', target: 0.005, targetPct: 0.5, color: '#627EEA' },
+    DOGE: { symbol: 'dogeusdt', name: 'DOGE', target: 0.008, targetPct: 0.8, color: '#F3BA2F' }
+  };
+
+  // Net profit per win (after fees)
+  function netProfitOnTarget(coinId) {
+    const target = COINS[coinId].target;
+    return (WORKING_CAPITAL * target) - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
+  }
+
+  // State for each coin
+  let states = {};
+  let allRunning = true;
+  let wsConnections = {};
+
   // DOM elements
-  const totalProfitSpan = document.getElementById('totalProfit');
-  const tradeCountSpan = document.getElementById('tradeCount');
-  const winRateSpan = document.getElementById('winRate');
-  const btcPriceSpan = document.getElementById('btcPrice');
-  const logBox = document.getElementById('logBox');
-  const pauseBtn = document.getElementById('pauseBtn');
-  const resetBtn = document.getElementById('resetBtn');
-  const exportBtn = document.getElementById('exportBtn');
-  
-  let logEntries = [];
-  
-  function addLog(msg, isWin = null) {
+  const pauseAllBtn = document.getElementById('pauseAllBtn');
+  const resetAllBtn = document.getElementById('resetAllBtn');
+  const exportAllBtn = document.getElementById('exportAllBtn');
+
+  // Helper: add log to specific coin's log box
+  function addLog(coinId, msg, isWin = null) {
     const time = new Date().toLocaleTimeString();
     const cls = isWin === true ? 'log-win' : (isWin === false ? 'log-loss' : '');
-    logEntries.unshift(`<div class="${cls}">[${time}] ${msg}</div>`);
-    if (logEntries.length > 50) logEntries.pop();
-    logBox.innerHTML = logEntries.join('');
+    const entry = `<div class="${cls}">[${time}] ${msg}</div>`;
+    const s = states[coinId];
+    s.logEntries.unshift(entry);
+    if (s.logEntries.length > 40) s.logEntries.pop();
+    const logBox = document.getElementById(`${coinId.toLowerCase()}-log`);
+    if (logBox) logBox.innerHTML = s.logEntries.join('');
   }
-  
-  function updateUI() {
-    totalProfitSpan.innerText = `$${totalProfit.toFixed(2)}`;
-    tradeCountSpan.innerText = totalTrades;
-    winRateSpan.innerText = totalTrades > 0 ? ((totalWins/totalTrades)*100).toFixed(1)+'%' : '—';
-    // update chart (optional, simple line)
-    if (window.gainsChart) {
-      const ctx = document.getElementById('gainsChart').getContext('2d');
-      if (window.gainsChartInstance) window.gainsChartInstance.destroy();
-      window.gainsChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { labels: tradeHistory.map((_,i)=>i+1), datasets: [{ label: 'Cumulative Profit ($)', data: tradeHistory.map(t => t.cumulativeProfit), borderColor: '#F7931A', fill: false, pointRadius: 0 }] },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } } }
-      });
+
+  function updateUI(coinId) {
+    const s = states[coinId];
+    const profitSpan = document.getElementById(`${coinId.toLowerCase()}-profit`);
+    const wrSpan = document.getElementById(`${coinId.toLowerCase()}-wr`);
+    const progressFill = document.getElementById(`${coinId.toLowerCase()}-progress`);
+    if (profitSpan) profitSpan.innerText = `$${s.totalProfit.toFixed(2)}`;
+    if (wrSpan) wrSpan.innerText = s.totalTrades > 0 ? ((s.totalWins/s.totalTrades)*100).toFixed(1)+'%' : '—';
+    if (progressFill) {
+      const prog = Math.min(100, (s.totalTrades / 200) * 100);
+      progressFill.style.width = `${prog}%`;
     }
   }
-  
-  // Record a completed trade
-  function recordTrade(outcome, exitPrice, profitAmount, durationMs, isWin) {
+
+  // Record a trade
+  function recordTrade(coinId, exitPrice, profitAmount, durationMs, isWin, exitReason) {
+    const s = states[coinId];
+    const cfg = COINS[coinId];
     const tradeRecord = {
-      tradeId: totalTrades + 1,
+      tradeId: s.totalTrades + 1,
       timestamp: new Date().toISOString(),
-      coin: 'BTC',
-      entryPrice: entryPrice,
-      targetPrice: targetPrice,
+      coin: cfg.name,
+      entryPrice: s.entryPrice,
+      targetPrice: s.targetPrice,
       exitPrice: exitPrice,
-      targetPct: TARGET_PCT * 100,
-      actualMovePct: ((exitPrice - entryPrice) / entryPrice) * 100,
+      targetPct: cfg.targetPct,
+      actualMovePct: ((exitPrice - s.entryPrice) / s.entryPrice) * 100,
       profitUsd: profitAmount,
-      cumulativeProfit: totalProfit + profitAmount,
+      cumulativeProfit: s.totalProfit + profitAmount,
       win: isWin,
       durationSeconds: Math.floor(durationMs / 1000),
       feesUsd: (WORKING_CAPITAL * TRADE_FEE) + (WORKING_CAPITAL * SPREAD),
-      notes: outcome === 'target' ? 'Target hit' : 'Timeout (4h)'
+      exitReason: exitReason
     };
-    tradeHistory.push(tradeRecord);
-    totalProfit += profitAmount;
-    if (isWin) totalWins++;
-    totalTrades++;
-    updateUI();
-    
-    // Add to log display
-    addLog(`${isWin ? '✅ WIN' : '❌ LOSS'} → $${Math.abs(profitAmount).toFixed(3)} | exit: $${exitPrice.toFixed(2)} | ${tradeRecord.notes}`, isWin);
+    s.tradeHistory.push(tradeRecord);
+    s.totalProfit += profitAmount;
+    if (isWin) s.totalWins++;
+    s.totalTrades++;
+    updateUI(coinId);
+    addLog(coinId, `${isWin ? '✅ WIN' : '❌ LOSS'} → $${Math.abs(profitAmount).toFixed(3)} | exit: $${exitPrice.toFixed(4)} | ${exitReason}`, isWin);
   }
-  
-  // Close trade and record
-  function closeTrade(exitReason, exitPrice, profitAmount, isWin, durationMs) {
-    if (!tradeActive) return;
-    tradeActive = false;
-    if (monitorInterval) clearInterval(monitorInterval);
-    if (timerInterval) clearInterval(timerInterval);
+
+  // Close trade
+  function closeTrade(coinId, exitReason, exitPrice, profitAmount, isWin, durationMs) {
+    const s = states[coinId];
+    if (!s.tradeActive) return;
+    s.tradeActive = false;
+    if (s.monitorInterval) clearInterval(s.monitorInterval);
+    if (s.timerInterval) clearInterval(s.timerInterval);
     
-    recordTrade(exitReason, exitPrice, profitAmount, durationMs, isWin);
+    recordTrade(coinId, exitPrice, profitAmount, durationMs, isWin, exitReason);
     
-    // Schedule next trade (5-15 min later)
-    if (nextTradeTimeout) clearTimeout(nextTradeTimeout);
-    nextTradeTimeout = setTimeout(() => {
-      if (isRunning && !tradeActive) startTrade();
+    // Schedule next trade (5-15 min)
+    if (s.nextTradeTimeout) clearTimeout(s.nextTradeTimeout);
+    s.nextTradeTimeout = setTimeout(() => {
+      if (allRunning && !s.tradeActive) startTrade(coinId);
     }, 300000 + Math.random() * 600000);
   }
-  
-  function startTrade() {
-    if (!isRunning || tradeActive) return;
-    if (btcPrice < 10000) {
-      setTimeout(() => startTrade(), 5000);
+
+  function startTrade(coinId) {
+    const s = states[coinId];
+    const cfg = COINS[coinId];
+    if (!allRunning || s.tradeActive) return;
+    if (s.price < (cfg.name === 'DOGE' ? 0.01 : 1)) {
+      setTimeout(() => startTrade(coinId), 5000);
       return;
     }
-    entryPrice = btcPrice;
-    targetPrice = entryPrice * (1 + TARGET_PCT);
-    tradeActive = true;
-    tradeStartTime = Date.now();
-    addLog(`🟢 BUY @ $${entryPrice.toFixed(2)} | TARGET: $${targetPrice.toFixed(2)} (+0.4%) | HOLD: 4h`);
+    s.entryPrice = s.price;
+    s.targetPrice = s.entryPrice * (1 + cfg.target);
+    s.tradeActive = true;
+    s.tradeStartTime = Date.now();
+    addLog(coinId, `🟢 BUY @ $${s.entryPrice.toFixed(4)} | TARGET: $${s.targetPrice.toFixed(4)} (+${cfg.targetPct}%) | HOLD: 4h`);
     
-    // Timer display update (optional)
-    timerInterval = setInterval(() => {
-      if (!tradeActive) return;
-      const elapsed = Date.now() - tradeStartTime;
-      const hours = Math.floor(elapsed / 3600000);
-      const mins = Math.floor((elapsed % 3600000) / 60000);
-      // could update a timer label if needed
+    // Timer display (optional)
+    s.timerInterval = setInterval(() => {
+      if (!s.tradeActive) return;
     }, 1000);
     
     // Monitor price
-    monitorInterval = setInterval(() => {
-      if (!tradeActive || !isRunning) return;
+    s.monitorInterval = setInterval(() => {
+      if (!s.tradeActive || !allRunning) return;
       const now = Date.now();
-      const elapsed = now - tradeStartTime;
+      const elapsed = now - s.tradeStartTime;
       
-      if (btcPrice >= targetPrice) {
-        // WIN by target
-        clearInterval(monitorInterval);
-        clearInterval(timerInterval);
-        closeTrade('target', btcPrice, NET_PROFIT_ON_TARGET, true, elapsed);
+      if (s.price >= s.targetPrice) {
+        clearInterval(s.monitorInterval);
+        clearInterval(s.timerInterval);
+        const profit = netProfitOnTarget(coinId);
+        closeTrade(coinId, 'target_hit', s.price, profit, true, elapsed);
       }
       else if (elapsed >= HOLD_MS) {
-        // Timeout exit
-        clearInterval(monitorInterval);
-        clearInterval(timerInterval);
-        const actualMove = (btcPrice - entryPrice) / entryPrice;
+        clearInterval(s.monitorInterval);
+        clearInterval(s.timerInterval);
+        const actualMove = (s.price - s.entryPrice) / s.entryPrice;
         let profit = 0;
         if (actualMove > 0) {
-          const gross = WORKING_CAPITAL * Math.min(actualMove, TARGET_PCT);
+          const gross = WORKING_CAPITAL * Math.min(actualMove, cfg.target);
           profit = gross - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
         } else {
           const grossLoss = WORKING_CAPITAL * Math.abs(actualMove);
           profit = -(grossLoss + (WORKING_CAPITAL * TRADE_FEE) + (WORKING_CAPITAL * SPREAD));
         }
-        closeTrade('timeout', btcPrice, profit, profit > 0, elapsed);
+        closeTrade(coinId, 'timeout_4h', s.price, profit, profit > 0, elapsed);
       }
     }, 2000);
   }
-  
-  // ================= BINANCE WEBSOCKET (REAL-TIME) =================
-  let ws = null;
-  function connectWebSocket() {
-    ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
-    ws.onopen = () => { addLog('🟢 WebSocket connected · real BTC price'); };
+
+  // WebSocket connection for each coin
+  function connectWebSocket(coinId) {
+    const cfg = COINS[coinId];
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${cfg.symbol}@trade`);
+    ws.onopen = () => { addLog(coinId, '🟢 WebSocket connected'); };
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
         if (data.p) {
-          const newPrice = parseFloat(data.p);
-          if (newPrice > 10000 && newPrice < 200000) {
-            btcPrice = newPrice;
-            btcPriceSpan.innerText = `$${btcPrice.toFixed(2)}`;
+          let newPrice = parseFloat(data.p);
+          if (newPrice > 0) {
+            states[coinId].price = newPrice;
+            const priceSpan = document.getElementById(`${coinId.toLowerCase()}-price`);
+            if (priceSpan) priceSpan.innerText = cfg.name === 'DOGE' ? `$${newPrice.toFixed(6)}` : `$${newPrice.toFixed(2)}`;
           }
         }
       } catch(err) {}
     };
-    ws.onclose = () => setTimeout(connectWebSocket, 3000);
+    ws.onclose = () => setTimeout(() => connectWebSocket(coinId), 3000);
+    return ws;
   }
-  
-  // ================= CONTROLS =================
-  function pauseSim() {
-    if (!isRunning) return;
-    isRunning = false;
-    if (monitorInterval) clearInterval(monitorInterval);
-    if (timerInterval) clearInterval(timerInterval);
-    if (nextTradeTimeout) clearTimeout(nextTradeTimeout);
-    pauseBtn.innerText = '▶️ RESUME';
-    addLog('⏸️ Bot paused');
+
+  // Initialize a coin's state
+  function initCoin(coinId) {
+    states[coinId] = {
+      totalProfit: 0,
+      totalTrades: 0,
+      totalWins: 0,
+      tradeActive: false,
+      entryPrice: 0,
+      targetPrice: 0,
+      tradeStartTime: 0,
+      price: 100,
+      monitorInterval: null,
+      timerInterval: null,
+      nextTradeTimeout: null,
+      tradeHistory: [],
+      logEntries: []
+    };
   }
-  
-  function resumeSim() {
-    if (isRunning) return;
-    isRunning = true;
-    pauseBtn.innerText = '⏸️ PAUSE';
-    addLog('▶️ Bot resumed');
-    if (!tradeActive) setTimeout(() => startTrade(), 5000);
+
+  // Global controls
+  function pauseAll() {
+    allRunning = false;
+    pauseAllBtn.innerText = '▶️ RESUME ALL';
+    for (let coinId of Object.keys(COINS)) {
+      const s = states[coinId];
+      if (s.monitorInterval) clearInterval(s.monitorInterval);
+      if (s.timerInterval) clearInterval(s.timerInterval);
+      addLog(coinId, '⏸️ Paused');
+    }
   }
-  
+
+  function resumeAll() {
+    allRunning = true;
+    pauseAllBtn.innerText = '⏸️ PAUSE ALL';
+    for (let coinId of Object.keys(COINS)) {
+      const s = states[coinId];
+      if (!s.tradeActive) startTrade(coinId);
+      addLog(coinId, '▶️ Resumed');
+    }
+  }
+
   function resetAll() {
-    // Stop everything
-    if (monitorInterval) clearInterval(monitorInterval);
-    if (timerInterval) clearInterval(timerInterval);
-    if (nextTradeTimeout) clearTimeout(nextTradeTimeout);
-    tradeActive = false;
-    isRunning = true;
-    pauseBtn.innerText = '⏸️ PAUSE';
-    
-    // Reset stats
-    totalProfit = 0;
-    totalTrades = 0;
-    totalWins = 0;
-    tradeHistory = [];
-    logEntries = [];
-    addLog('🔄 FULL RESET — all trade data cleared');
-    updateUI();
-    
-    // Restart chart
-    if (window.gainsChartInstance) window.gainsChartInstance.destroy();
-    const ctx = document.getElementById('gainsChart').getContext('2d');
-    window.gainsChartInstance = new Chart(ctx, {
-      type: 'line',
-      data: { labels: [], datasets: [{ label: 'Cumulative Profit ($)', data: [], borderColor: '#F7931A', fill: false }] },
-      options: { responsive: true }
-    });
-    
-    setTimeout(() => { if (isRunning && !tradeActive) startTrade(); }, 2000);
+    allRunning = true;
+    pauseAllBtn.innerText = '⏸️ PAUSE ALL';
+    for (let coinId of Object.keys(COINS)) {
+      const s = states[coinId];
+      if (s.monitorInterval) clearInterval(s.monitorInterval);
+      if (s.timerInterval) clearInterval(s.timerInterval);
+      if (s.nextTradeTimeout) clearTimeout(s.nextTradeTimeout);
+      s.totalProfit = 0;
+      s.totalTrades = 0;
+      s.totalWins = 0;
+      s.tradeActive = false;
+      s.tradeHistory = [];
+      s.logEntries = [];
+      updateUI(coinId);
+      addLog(coinId, '🔄 RESET — all data cleared');
+      setTimeout(() => { if (allRunning) startTrade(coinId); }, 2000);
+    }
   }
-  
-  function exportToJson() {
+
+  function exportAllTrades() {
+    const allTrades = [];
+    for (let coinId of Object.keys(COINS)) {
+      allTrades.push(...states[coinId].tradeHistory);
+    }
+    // Sort by timestamp
+    allTrades.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
     const exportData = {
       exportDate: new Date().toISOString(),
       strategy: {
-        capital: WORKING_CAPITAL,
-        targetPct: TARGET_PCT * 100,
+        capitalPerCoin: WORKING_CAPITAL,
         feePercent: TRADE_FEE * 100,
         spreadPercent: SPREAD * 100,
         maxHoldHours: 4
       },
       summary: {
-        totalTrades: totalTrades,
-        totalWins: totalWins,
-        totalLosses: totalTrades - totalWins,
-        winRate: totalTrades ? (totalWins/totalTrades)*100 : 0,
-        totalProfitUsd: totalProfit,
-        averageProfitPerTrade: totalTrades ? totalProfit/totalTrades : 0
+        totalTradesAllCoins: allTrades.length,
+        totalProfitAllCoins: allTrades.reduce((sum, t) => sum + t.profitUsd, 0),
+        byCoin: Object.keys(COINS).map(coinId => ({
+          coin: COINS[coinId].name,
+          trades: states[coinId].totalTrades,
+          profit: states[coinId].totalProfit,
+          winRate: states[coinId].totalTrades ? (states[coinId].totalWins/states[coinId].totalTrades)*100 : 0
+        }))
       },
-      trades: tradeHistory
+      trades: allTrades
     };
     const dataStr = JSON.stringify(exportData, null, 2);
     const blob = new Blob([dataStr], {type: 'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `scalper_trades_${new Date().toISOString().slice(0,19)}.json`;
+    a.download = `all_coins_trades_${new Date().toISOString().slice(0,19)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    addLog(`📁 Exported ${tradeHistory.length} trades to JSON`);
+    addLog('BTC', `📁 Exported ${allTrades.length} total trades across all coins`);
   }
-  
-  // ================= INIT =================
-  function init() {
-    connectWebSocket();
-    updateUI();
-    // init empty chart
-    const ctx = document.getElementById('gainsChart').getContext('2d');
-    window.gainsChartInstance = new Chart(ctx, {
-      type: 'line',
-      data: { labels: [], datasets: [{ label: 'Cumulative Profit ($)', data: [], borderColor: '#F7931A', fill: false, pointRadius: 0 }] },
-      options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } } }
+
+  // Tab switching
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const coin = btn.dataset.coin;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      document.getElementById(`tab-${coin}`).classList.add('active');
     });
-    setTimeout(() => { if (isRunning) startTrade(); }, 3000);
+  });
+
+  // Initialize everything
+  for (let coinId of Object.keys(COINS)) {
+    initCoin(coinId);
+    wsConnections[coinId] = connectWebSocket(coinId);
+    setTimeout(() => startTrade(coinId), 3000);
   }
-  
-  pauseBtn.onclick = () => { if (isRunning) pauseSim(); else resumeSim(); };
-  resetBtn.onclick = resetAll;
-  exportBtn.onclick = exportToJson;
-  
-  init();
+
+  pauseAllBtn.onclick = () => { if (allRunning) pauseAll(); else resumeAll(); };
+  resetAllBtn.onclick = resetAll;
+  exportAllBtn.onclick = exportAllTrades;
 </script>
 </body>
 </html>
