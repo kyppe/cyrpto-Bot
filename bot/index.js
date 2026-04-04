@@ -140,7 +140,7 @@ ws.on('close', () => {
 const app = express();
 
 // API endpoint to get stats and trades
-app.get('/api/stats', (req, res) => {
+app.get(['/api/stats', '/crypto/api/stats'], (req, res) => {
   const cumulativeProfit = [];
   let sum = 0;
   for (const t of trades) {
@@ -255,7 +255,7 @@ app.get('/', (req, res) => {
 <script>
   let chart;
   async function fetchData() {
-    const res = await fetch('api/stats');
+    const res = await fetch('/crypto/api/stats');
     const data = await res.json();
     document.getElementById('profit').innerHTML = \`$\${data.totalProfit.toFixed(2)}\`;
     document.getElementById('profit').className = \`card-value \${data.totalProfit >= 0 ? 'positive' : 'negative'}\`;
