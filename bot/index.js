@@ -255,7 +255,7 @@ app.get('/', (req, res) => {
 <script>
   let chart;
   async function fetchData() {
-    const res = await fetch('/api/stats');
+    const res = await fetch('api/stats');
     const data = await res.json();
     document.getElementById('profit').innerHTML = \`$\${data.totalProfit.toFixed(2)}\`;
     document.getElementById('profit').className = \`card-value \${data.totalProfit >= 0 ? 'positive' : 'negative'}\`;
