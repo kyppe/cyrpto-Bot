@@ -8,17 +8,16 @@ const WORKING_CAPITAL = 100;
 const TRADE_FEE       = 0.00175;
 const SPREAD          = 0.0002;
 const TARGET          = 0.004;   // 0.4% take profit
-const PATIENCE_DROP   = 0.010;   // -1.0% triggers patience timer
+const PATIENCE_DROP   = 0.006;   // -0.6% triggers patience timer (both strategies)
 const PATIENCE_MS     = 24 * 3600000; // 24h below -1% → cashout
 const GRACE_MS        = 30 * 60000;   // 30min no timer at all
 const WAVE_DROP       = 0.002;   // 0.2% drop from peak → wave cashout
-const TRAILING_STOP   = 0.006;   // 0.6% trailing stop for WAVE
 const VOLATILITY_MIN  = 0.002;   // skip trade if 30min movement < 0.2%
 const SLIPPAGE        = 0.0005;  // 0.05% — you never get exact price in real life
 const OVERNIGHT_FEE   = 0.0003;  // 0.03% per night for stocks/commodities held overnight
 
 // ⚠️  Get your FREE key at https://finnhub.io
-const FINNHUB_KEY = 'd78h9qpr01qsbhvtsjggd78h9qpr01qsbhvtsjh0';
+const FINNHUB_KEY = 'YOUR_FINNHUB_KEY_HERE';
 
 // Crypto assets (Binance)
 const COINS = ['btcusdt','ethusdt','solusdt','bnbusdt','xrpusdt','dogeusdt','adausdt','avaxusdt'];
@@ -259,7 +258,7 @@ function startTrade(key) {
           if (!s.belowDropSince) {
             // Just crossed below — start patience timer
             s.belowDropSince = Date.now();
-            addLog(`[${s.label}/safe] ⚠️ Dropped -1% @ ${cur.toFixed(4)} — 24h patience timer started`);
+            addLog(`[${s.label}/safe] ⚠️ Dropped -0.6% @ ${cur.toFixed(4)} — 24h patience timer started`);
             s.patienceTimeoutId = setTimeout(() => {
               if (!s.tradeActive) return;
               // Still below after 24h → cashout
@@ -276,7 +275,7 @@ function startTrade(key) {
           if (s.belowDropSince) {
             s.belowDropSince = null;
             if (s.patienceTimeoutId) { clearTimeout(s.patienceTimeoutId); s.patienceTimeoutId = null; }
-            addLog(`[${s.label}/safe] 🔄 Recovered above -1% — patience timer reset`);
+            addLog(`[${s.label}/safe] 🔄 Recovered above -0.6% — patience timer reset`);
           }
         }
       }
@@ -293,12 +292,7 @@ function startTrade(key) {
         closeTrade(key, 'wave_cashout', cur, netProfit(peakMove - WAVE_DROP), true, elapsed);
         return;
       }
-      // Trailing stop after grace (only if below target)
-      if (elapsed > GRACE_MS && !aboveTarget && dropFromPeak >= TRAILING_STOP) {
-        clearInterval(s.monitorInterval);
-        closeTrade(key, 'trailing_stop', cur, netProfit(Math.max(move, -TRAILING_STOP)), move > -TRAILING_STOP, elapsed);
-        return;
-      }
+      // No separate trailing stop — patience timer at -0.6% handles exits
       // WAVE has no hard timeout — it waits indefinitely using same patience logic
       if (elapsed > GRACE_MS) {
         if (move <= -PATIENCE_DROP) {
@@ -426,7 +420,7 @@ app.get(['/api/stats', '/crypto/api/stats'], (req, res) => {
 app.get(['/api/export', '/crypto/api/export'], (req, res) => {
   const exportData = {
     exportedAt: new Date().toISOString(),
-    config: { WORKING_CAPITAL, TRADE_FEE, SPREAD, TARGET, PATIENCE_DROP, PATIENCE_MS, GRACE_MS, WAVE_DROP, TRAILING_STOP, VOLATILITY_MIN, SLIPPAGE, OVERNIGHT_FEE },
+    config: { WORKING_CAPITAL, TRADE_FEE, SPREAD, TARGET, PATIENCE_DROP, PATIENCE_MS, GRACE_MS, WAVE_DROP, VOLATILITY_MIN, SLIPPAGE, OVERNIGHT_FEE },
     summary: {},
     allTrades: []
   };
