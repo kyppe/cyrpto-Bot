@@ -14,6 +14,8 @@ const GRACE_MS        = 30 * 60000;   // 30min no timer at all
 const WAVE_DROP       = 0.002;   // 0.2% drop from peak → wave cashout
 const TRAILING_STOP   = 0.006;   // 0.6% trailing stop for WAVE
 const VOLATILITY_MIN  = 0.002;   // skip trade if 30min movement < 0.2%
+const SLIPPAGE        = 0.0005;  // 0.05% — you never get exact price in real life
+const OVERNIGHT_FEE   = 0.0003;  // 0.03% per night for stocks/commodities held overnight
 
 // ⚠️  Get your FREE key at https://finnhub.io
 const FINNHUB_KEY = 'd78h9qpr01qsbhvtsjggd78h9qpr01qsbhvtsjh0';
@@ -56,7 +58,7 @@ ALL_ASSETS.forEach(({ id }) => {
       belowDropSince: null,   // timestamp when price first dropped below -1%
       patienceTimeoutId: null,
       monitorInterval: null, nextTradeTimeout: null,
-      trades: [], totalProfit: 0, totalTrades: 0, totalWins: 0,
+      trades: [], totalProfit: 0, totalTrades: 0, totalWins: 0, overnightFees: 0,
     };
   });
 });
@@ -92,12 +94,24 @@ function saveData() {
 
 function addLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
+// Stocks: Mon-Fri 9:30am-4pm ET
 function isMarketOpen() {
   const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const day = et.getDay();
   if (day === 0 || day === 6) return false;
   const m = et.getHours() * 60 + et.getMinutes();
   return m >= 570 && m < 960;
+}
+
+// Commodities: Sun 6pm - Fri 5pm ET (nearly 24/7)
+function isCommodityMarketOpen() {
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  const m = et.getHours() * 60 + et.getMinutes();
+  if (day === 6) return false;                   // all Saturday closed
+  if (day === 5 && m >= 1020) return false;      // Friday after 5pm closed
+  if (day === 0 && m < 1080) return false;       // Sunday before 6pm closed
+  return true;
 }
 
 function netProfit(move) {
@@ -139,19 +153,28 @@ function closeTrade(key, exitReason, exitPrice, profit, isWin, durationMs) {
   s.belowDropSince = null;
   s.patienceTimeoutId = null;
 
+  // Deduct any overnight fees accumulated during this trade
+  const overnightDeduction = s.overnightFees || 0;
+  const finalProfit = profit - overnightDeduction;
+  const finalWin = finalProfit > 0;
+  s.overnightFees = 0; // reset for next trade
+
   s.trades.push({
     id: s.trades.length + 1,
     timestamp: new Date().toISOString(),
     entryPrice: s.entryPrice, targetPrice: s.targetPrice,
-    exitPrice, profitUsd: parseFloat(profit.toFixed(4)),
-    win: isWin, durationSeconds: Math.floor(durationMs / 1000), exitReason
+    exitPrice, profitUsd: parseFloat(finalProfit.toFixed(4)),
+    win: finalWin, durationSeconds: Math.floor(durationMs / 1000), exitReason,
+    overnightFees: parseFloat(overnightDeduction.toFixed(4)),
+    slippage: parseFloat((s.entryPrice * SLIPPAGE / (1 + SLIPPAGE)).toFixed(4))
   });
-  s.totalProfit += profit;
+  s.totalProfit += finalProfit;
   s.totalTrades++;
-  if (isWin) s.totalWins++;
+  if (finalWin) s.totalWins++;
   saveData();
 
-  addLog(`[${s.label}/${s.strat}] ${isWin ? '✅' : '❌'} $${profit.toFixed(3)} | ${exitReason} | total: $${s.totalProfit.toFixed(2)}`);
+  const overStr = overnightDeduction > 0 ? ` | overnight: -$${overnightDeduction.toFixed(3)}` : '';
+  addLog(`[${s.label}/${s.strat}] ${finalWin ? '✅' : '❌'} $${finalProfit.toFixed(3)}${overStr} | ${exitReason} | total: $${s.totalProfit.toFixed(2)}`);
   s.nextTradeTimeout = setTimeout(() => { if (!s.tradeActive) startTrade(key); }, 300000 + Math.random() * 600000);
 }
 
@@ -160,7 +183,7 @@ function startTrade(key) {
   if (s.tradeActive) return;
 
   // Stocks & commodities: only during market hours
-  if ((s.type === 'stock' || s.type === 'commodity') && !isMarketOpen()) {
+  if ((s.type === 'stock' && !isMarketOpen()) || (s.type === 'commodity' && !isCommodityMarketOpen())) {
     s.nextTradeTimeout = setTimeout(() => startTrade(key), 60000);
     return;
   }
@@ -175,20 +198,23 @@ function startTrade(key) {
     return;
   }
 
-  s.entryPrice    = price;
-  s.targetPrice   = price * (1 + TARGET);
-  s.peakPrice     = price;
+  // Apply slippage — in real life you never get the exact price shown
+  const slippedPrice = price * (1 + SLIPPAGE);
+  s.entryPrice    = slippedPrice;
+  s.targetPrice   = slippedPrice * (1 + TARGET);
+  s.peakPrice     = slippedPrice;
   s.tradeActive   = true;
   s.tradeStartTime = Date.now();
+  s.lastOvernightCheck = Date.now();
   s.belowDropSince = null;
 
-  addLog(`[${s.label}/${s.strat}] 🟢 BUY @ ${price.toFixed(4)} | TARGET +0.4% @ ${s.targetPrice.toFixed(4)}`);
+  addLog(`[${s.label}/${s.strat}] 🟢 BUY @ ${slippedPrice.toFixed(4)} (slip +0.05%) | TARGET +0.4% @ ${s.targetPrice.toFixed(4)}`);
 
   s.monitorInterval = setInterval(() => {
     if (!s.tradeActive) return;
 
     // Market closed mid-trade
-    if ((s.type === 'stock' || s.type === 'commodity') && !isMarketOpen()) {
+    if ((s.type === 'stock' && !isMarketOpen()) || (s.type === 'commodity' && !isCommodityMarketOpen())) {
       clearInterval(s.monitorInterval);
       const cur = prices[s.id];
       const move = (cur - s.entryPrice) / s.entryPrice;
@@ -204,6 +230,17 @@ function startTrade(key) {
     const elapsed = Date.now() - s.tradeStartTime;
     const move    = (cur - s.entryPrice) / s.entryPrice;
     if (cur > s.peakPrice) s.peakPrice = cur;
+
+    // Overnight fee: charge every 24h for stocks and commodities
+    if (s.type === 'stock' || s.type === 'commodity') {
+      const hoursSinceCheck = (Date.now() - s.lastOvernightCheck) / 3600000;
+      if (hoursSinceCheck >= 24) {
+        const fee = WORKING_CAPITAL * OVERNIGHT_FEE;
+        s.overnightFees = (s.overnightFees || 0) + fee;
+        s.lastOvernightCheck = Date.now();
+        addLog(`[${s.label}/${s.strat}] 💸 Overnight fee -$${fee.toFixed(3)} (total fees: $${s.overnightFees.toFixed(3)})`);
+      }
+    }
 
     // ============ SAFE STRATEGY ============
     if (s.strat === 'safe') {
@@ -374,7 +411,7 @@ app.get(['/api/stats', '/crypto/api/stats'], (req, res) => {
         winRate: s.totalTrades ? (s.totalWins / s.totalTrades) * 100 : 0,
         currentPrice: prices[id] || 0,
         tradeActive: s.tradeActive,
-        marketOpen: isMarketOpen(),
+        marketOpen: s.type === 'commodity' ? isCommodityMarketOpen() : isMarketOpen(),
         patienceProgress,  // null or 0-100%
         belowDrop: s.belowDropSince !== null,
         trades: s.trades.slice(-30).reverse(),
@@ -389,7 +426,7 @@ app.get(['/api/stats', '/crypto/api/stats'], (req, res) => {
 app.get(['/api/export', '/crypto/api/export'], (req, res) => {
   const exportData = {
     exportedAt: new Date().toISOString(),
-    config: { WORKING_CAPITAL, TRADE_FEE, SPREAD, TARGET, PATIENCE_DROP, PATIENCE_MS, GRACE_MS, WAVE_DROP, TRAILING_STOP, VOLATILITY_MIN },
+    config: { WORKING_CAPITAL, TRADE_FEE, SPREAD, TARGET, PATIENCE_DROP, PATIENCE_MS, GRACE_MS, WAVE_DROP, TRAILING_STOP, VOLATILITY_MIN, SLIPPAGE, OVERNIGHT_FEE },
     summary: {},
     allTrades: []
   };
