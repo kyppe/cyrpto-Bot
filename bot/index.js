@@ -17,7 +17,7 @@ const SLIPPAGE        = 0.0005;  // 0.05% — you never get exact price in real 
 const OVERNIGHT_FEE   = 0.0003;  // 0.03% per night for stocks/commodities held overnight
 
 // ⚠️  Get your FREE key at https://finnhub.io
-const FINNHUB_KEY = 'YOUR_FINNHUB_KEY_HERE';
+const FINNHUB_KEY = 'd78h9qpr01qsbhvtsjggd78h9qpr01qsbhvtsjh0';
 
 // Crypto assets (Binance)
 const COINS = ['btcusdt','ethusdt','solusdt','bnbusdt','xrpusdt','dogeusdt','adausdt','avaxusdt'];
