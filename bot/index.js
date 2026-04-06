@@ -16,7 +16,7 @@ const TRAILING_STOP   = 0.006;   // 0.6% trailing stop for WAVE
 const VOLATILITY_MIN  = 0.002;   // skip trade if 30min movement < 0.2%
 
 // ⚠️  Get your FREE key at https://finnhub.io
-const FINNHUB_KEY = 'YOUR_FINNHUB_KEY_HERE';
+const FINNHUB_KEY = 'd78h9qpr01qsbhvtsjggd78h9qpr01qsbhvtsjh0';
 
 // Crypto assets (Binance)
 const COINS = ['btcusdt','ethusdt','solusdt','bnbusdt','xrpusdt','dogeusdt','adausdt','avaxusdt'];
