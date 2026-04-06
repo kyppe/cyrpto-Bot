@@ -107,7 +107,11 @@ function netProfit(move) {
 // Volatility check: has price moved at least VOLATILITY_MIN in last 30 min?
 function hasEnoughVolatility(id) {
   const hist = priceHistory[id];
-  if (hist.length < 2) return true; // not enough data, allow trade
+  if (hist.length < 2) return true;
+  // Need at least 2 minutes of history before we start filtering
+  // Otherwise bot just started and has no data to judge volatility
+  const spanMs = hist[hist.length - 1].ts - hist[0].ts;
+  if (spanMs < 2 * 60000) return true; // less than 2min of data → allow trade
   const oldest = hist[0].price;
   const newest = hist[hist.length - 1].price;
   if (oldest === 0) return true;
