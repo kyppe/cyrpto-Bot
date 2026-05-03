@@ -16,6 +16,28 @@ const VOLATILITY_MIN  = 0.002;   // skip trade if 30min movement < 0.2%
 const SLIPPAGE        = 0.0005;  // 0.05% — you never get exact price in real life
 const OVERNIGHT_FEE   = 0.0003;  // 0.03% per night for stocks/commodities held overnight
 
+// ============ PRO STRATEGY CONFIG ============
+// Designed after analyzing 2-week loss data: the safe/wave strategies bleed because
+// a few big drops (-6% to -15%) wipe dozens of small wins. Fix: hard stop, trend filter.
+const PRO_TARGET        = 0.006;   // 0.6% take profit (bigger reward)
+const PRO_STOP          = 0.004;   // 0.4% hard stop loss (cut it fast — no patience games)
+const PRO_TREND_WINDOW  = 15 * 60000;  // 15min moving average window
+const PRO_DANGER_DROP   = 0.02;    // if asset dropped >2% in last 30min → skip entry (crash guard)
+const PRO_COOLDOWN_MS   = 10 * 60000;  // 10min cooldown after a loss before re-entry
+const PRO_GRACE_MS      = 5 * 60000;   // 5min grace before stop loss activates
+// Asset-specific stop multipliers based on historical volatility from log data
+// Oil/AVAX/NatGas were disasters → tighter stops; BTC/DOGE/NVDA → slightly looser
+const PRO_ASSET_PROFILE = {
+  'CL=F':    { stopMult: 0.7,  targetMult: 0.8  },  // Oil: very tight, was -$27
+  'NG=F':    { stopMult: 0.7,  targetMult: 0.8  },  // NatGas: tight
+  'avaxusdt':{ stopMult: 0.75, targetMult: 0.85 },  // AVAX: tight, was -$13
+  'solusdt': { stopMult: 0.8,  targetMult: 0.9  },  // SOL: slightly tight
+  'SI=F':    { stopMult: 0.8,  targetMult: 0.9  },  // Silver: somewhat tight
+  'btcusdt': { stopMult: 1.2,  targetMult: 1.2  },  // BTC: looser, historically good
+  'dogeusdt':{ stopMult: 1.1,  targetMult: 1.2  },  // DOGE: good performer
+  'NVDA':    { stopMult: 1.1,  targetMult: 1.2  },  // NVDA: good performer
+};
+
 // ⚠️  Get your FREE key at https://finnhub.io
 const FINNHUB_KEY = 'd78h9qpr01qsbhvtsjggd78h9qpr01qsbhvtsjh0';
 
@@ -46,16 +68,19 @@ let botState = {};
 ALL_ASSETS.forEach(({ id }) => {
   prices[id] = 0;
   priceHistory[id] = [];
-  ['safe','wave'].forEach(strat => {
+  ['safe','wave','pro'].forEach(strat => {
     botState[`${id}_${strat}`] = {
       id, strat, type: ALL_ASSETS.find(a=>a.id===id).type,
       label: ALL_ASSETS.find(a=>a.id===id).label,
       tradeActive: false,
-      entryPrice: 0, targetPrice: 0, peakPrice: 0,
+      entryPrice: 0, targetPrice: 0, stopPrice: 0, peakPrice: 0,
       tradeStartTime: 0,
       // SAFE: patience timer state
-      belowDropSince: null,   // timestamp when price first dropped below -1%
+      belowDropSince: null,
       patienceTimeoutId: null,
+      // PRO: trend filter state
+      trendOk: true,
+      lastLossTime: 0,
       monitorInterval: null, nextTradeTimeout: null,
       trades: [], totalProfit: 0, totalTrades: 0, totalWins: 0, overnightFees: 0,
     };
@@ -74,6 +99,7 @@ if (fs.existsSync(DATA_FILE)) {
           botState[key].totalProfit  = s.totalProfit || 0;
           botState[key].totalTrades  = s.totalTrades || 0;
           botState[key].totalWins    = s.totalWins || 0;
+          botState[key].lastLossTime = s.lastLossTime || 0;
         }
       });
       console.log('Loaded previous data');
@@ -85,7 +111,7 @@ function saveData() {
   const toSave = {};
   Object.keys(botState).forEach(key => {
     const s = botState[key];
-    toSave[key] = { trades: s.trades, totalProfit: s.totalProfit, totalTrades: s.totalTrades, totalWins: s.totalWins };
+    toSave[key] = { trades: s.trades, totalProfit: s.totalProfit, totalTrades: s.totalTrades, totalWins: s.totalWins, lastLossTime: s.lastLossTime || 0 };
   });
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify({ botState: toSave }, null, 2));
@@ -107,9 +133,9 @@ function isCommodityMarketOpen() {
   const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const day = et.getDay();
   const m = et.getHours() * 60 + et.getMinutes();
-  if (day === 6) return false;                   // all Saturday closed
-  if (day === 5 && m >= 1020) return false;      // Friday after 5pm closed
-  if (day === 0 && m < 1080) return false;       // Sunday before 6pm closed
+  if (day === 6) return false;
+  if (day === 5 && m >= 1020) return false;
+  if (day === 0 && m < 1080) return false;
   return true;
 }
 
@@ -117,28 +143,53 @@ function netProfit(move) {
   return (WORKING_CAPITAL * move) - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
 }
 
+function proNetProfit(move) {
+  return (WORKING_CAPITAL * move) - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
+}
+
 // Volatility check: has price moved at least VOLATILITY_MIN in last 30 min?
 function hasEnoughVolatility(id) {
   const hist = priceHistory[id];
   if (hist.length < 2) return true;
-  // Need at least 2 minutes of history before we start filtering
-  // Otherwise bot just started and has no data to judge volatility
   const spanMs = hist[hist.length - 1].ts - hist[0].ts;
-  if (spanMs < 2 * 60000) return true; // less than 2min of data → allow trade
+  if (spanMs < 2 * 60000) return true;
   const oldest = hist[0].price;
   const newest = hist[hist.length - 1].price;
   if (oldest === 0) return true;
   return Math.abs((newest - oldest) / oldest) >= VOLATILITY_MIN;
 }
 
-// Keep 30min of price history (one entry per price update, max 1800 entries)
+// PRO: Check if market is in a crash/danger zone (dropped >2% in last 30min)
+function isInCrashZone(id) {
+  const hist = priceHistory[id];
+  if (hist.length < 2) return false;
+  const spanMs = hist[hist.length - 1].ts - hist[0].ts;
+  if (spanMs < 5 * 60000) return false; // need at least 5min of data
+  const oldest = hist[0].price;
+  const newest = hist[hist.length - 1].price;
+  if (oldest === 0) return false;
+  const drop = (oldest - newest) / oldest; // positive = dropped
+  return drop >= PRO_DANGER_DROP;
+}
+
+// PRO: Trend filter — is price above its 15min average? (simple momentum check)
+function isTrendUp(id) {
+  const hist = priceHistory[id];
+  if (hist.length < 3) return true; // not enough data, allow
+  const cutoff = Date.now() - PRO_TREND_WINDOW;
+  const window = hist.filter(p => p.ts >= cutoff);
+  if (window.length < 2) return true;
+  const avg = window.reduce((s, p) => s + p.price, 0) / window.length;
+  const current = hist[hist.length - 1].price;
+  return current >= avg; // price above average = uptrend
+}
+
+// Keep 30min of price history
 function recordPrice(id, price) {
   const now = Date.now();
   priceHistory[id].push({ price, ts: now });
-  // Keep only last 30 minutes
   const cutoff = now - 30 * 60000;
   priceHistory[id] = priceHistory[id].filter(p => p.ts >= cutoff);
-  // Also cap array size
   if (priceHistory[id].length > 2000) priceHistory[id] = priceHistory[id].slice(-1000);
 }
 
@@ -152,11 +203,14 @@ function closeTrade(key, exitReason, exitPrice, profit, isWin, durationMs) {
   s.belowDropSince = null;
   s.patienceTimeoutId = null;
 
-  // Deduct any overnight fees accumulated during this trade
   const overnightDeduction = s.overnightFees || 0;
   const finalProfit = profit - overnightDeduction;
   const finalWin = finalProfit > 0;
-  s.overnightFees = 0; // reset for next trade
+  s.overnightFees = 0;
+
+  if (!finalWin && s.strat === 'pro') {
+    s.lastLossTime = Date.now(); // record loss time for cooldown
+  }
 
   s.trades.push({
     id: s.trades.length + 1,
@@ -181,7 +235,6 @@ function startTrade(key) {
   const s = botState[key];
   if (s.tradeActive) return;
 
-  // Stocks & commodities: only during market hours
   if ((s.type === 'stock' && !isMarketOpen()) || (s.type === 'commodity' && !isCommodityMarketOpen())) {
     s.nextTradeTimeout = setTimeout(() => startTrade(key), 60000);
     return;
@@ -190,29 +243,59 @@ function startTrade(key) {
   const price = prices[s.id];
   if (!price || price < 0.0001) { setTimeout(() => startTrade(key), 5000); return; }
 
-  // Volatility check — skip dead/frozen markets
+  // Volatility check
   if (!hasEnoughVolatility(s.id)) {
     addLog(`[${s.label}/${s.strat}] ⏸ Skipping — market too quiet (< 0.2% movement in 30min)`);
-    s.nextTradeTimeout = setTimeout(() => startTrade(key), 1800000); // retry in 30min
+    s.nextTradeTimeout = setTimeout(() => startTrade(key), 1800000);
     return;
   }
 
-  // Apply slippage — in real life you never get the exact price shown
+  // ---- PRO STRATEGY EXTRA GUARDS ----
+  if (s.strat === 'pro') {
+    // Cooldown after a loss
+    if (s.lastLossTime && Date.now() - s.lastLossTime < PRO_COOLDOWN_MS) {
+      const remaining = Math.ceil((PRO_COOLDOWN_MS - (Date.now() - s.lastLossTime)) / 60000);
+      addLog(`[${s.label}/pro] ⏳ Loss cooldown — ${remaining}min remaining`);
+      s.nextTradeTimeout = setTimeout(() => startTrade(key), 60000);
+      return;
+    }
+    // Crash zone guard — skip if asset dropped hard recently
+    if (isInCrashZone(s.id)) {
+      addLog(`[${s.label}/pro] 🚨 Crash guard triggered — asset dropped >2% in 30min, skipping`);
+      s.nextTradeTimeout = setTimeout(() => startTrade(key), 600000); // retry in 10min
+      return;
+    }
+    // Trend filter — only buy uptrends
+    if (!isTrendUp(s.id)) {
+      addLog(`[${s.label}/pro] 📉 Trend filter — price below 15min avg, no entry`);
+      s.nextTradeTimeout = setTimeout(() => startTrade(key), 120000); // retry in 2min
+      return;
+    }
+  }
+
   const slippedPrice = price * (1 + SLIPPAGE);
-  s.entryPrice    = slippedPrice;
-  s.targetPrice   = slippedPrice * (1 + TARGET);
-  s.peakPrice     = slippedPrice;
-  s.tradeActive   = true;
+  s.entryPrice  = slippedPrice;
+  s.peakPrice   = slippedPrice;
+  s.tradeActive = true;
   s.tradeStartTime = Date.now();
   s.lastOvernightCheck = Date.now();
   s.belowDropSince = null;
 
-  addLog(`[${s.label}/${s.strat}] 🟢 BUY @ ${slippedPrice.toFixed(4)} (slip +0.05%) | TARGET +0.4% @ ${s.targetPrice.toFixed(4)}`);
+  if (s.strat === 'pro') {
+    const profile = PRO_ASSET_PROFILE[s.id] || { stopMult: 1.0, targetMult: 1.0 };
+    const adjustedTarget = PRO_TARGET * profile.targetMult;
+    const adjustedStop   = PRO_STOP   * profile.stopMult;
+    s.targetPrice = slippedPrice * (1 + adjustedTarget);
+    s.stopPrice   = slippedPrice * (1 - adjustedStop);
+    addLog(`[${s.label}/pro] 🟣 BUY @ ${slippedPrice.toFixed(4)} | TARGET +${(adjustedTarget*100).toFixed(2)}% @ ${s.targetPrice.toFixed(4)} | STOP -${(adjustedStop*100).toFixed(2)}% @ ${s.stopPrice.toFixed(4)}`);
+  } else {
+    s.targetPrice = slippedPrice * (1 + TARGET);
+    addLog(`[${s.label}/${s.strat}] 🟢 BUY @ ${slippedPrice.toFixed(4)} (slip +0.05%) | TARGET +0.4% @ ${s.targetPrice.toFixed(4)}`);
+  }
 
   s.monitorInterval = setInterval(() => {
     if (!s.tradeActive) return;
 
-    // Market closed mid-trade
     if ((s.type === 'stock' && !isMarketOpen()) || (s.type === 'commodity' && !isCommodityMarketOpen())) {
       clearInterval(s.monitorInterval);
       const cur = prices[s.id];
@@ -230,7 +313,7 @@ function startTrade(key) {
     const move    = (cur - s.entryPrice) / s.entryPrice;
     if (cur > s.peakPrice) s.peakPrice = cur;
 
-    // Overnight fee: charge every 24h for stocks and commodities
+    // Overnight fee
     if (s.type === 'stock' || s.type === 'commodity') {
       const hoursSinceCheck = (Date.now() - s.lastOvernightCheck) / 3600000;
       if (hoursSinceCheck >= 24) {
@@ -243,25 +326,18 @@ function startTrade(key) {
 
     // ============ SAFE STRATEGY ============
     if (s.strat === 'safe') {
-
-      // WIN: hit target
       if (cur >= s.targetPrice) {
         clearInterval(s.monitorInterval);
         closeTrade(key, 'target_hit', cur, netProfit(TARGET), true, elapsed);
         return;
       }
-
-      // Patience timer logic (only after grace period)
       if (elapsed > GRACE_MS) {
         if (move <= -PATIENCE_DROP) {
-          // Price is below -1%
           if (!s.belowDropSince) {
-            // Just crossed below — start patience timer
             s.belowDropSince = Date.now();
             addLog(`[${s.label}/safe] ⚠️ Dropped -0.6% @ ${cur.toFixed(4)} — 24h patience timer started`);
             s.patienceTimeoutId = setTimeout(() => {
               if (!s.tradeActive) return;
-              // Still below after 24h → cashout
               clearInterval(s.monitorInterval);
               const c = prices[s.id];
               const m = (c - s.entryPrice) / s.entryPrice;
@@ -269,9 +345,7 @@ function startTrade(key) {
               closeTrade(key, 'patience_exhausted', c, profit, false, Date.now() - s.tradeStartTime);
             }, PATIENCE_MS);
           }
-          // else: already timing, keep waiting
         } else {
-          // Price recovered above -1% → reset patience timer
           if (s.belowDropSince) {
             s.belowDropSince = null;
             if (s.patienceTimeoutId) { clearTimeout(s.patienceTimeoutId); s.patienceTimeoutId = null; }
@@ -281,19 +355,16 @@ function startTrade(key) {
       }
 
     // ============ WAVE STRATEGY ============
-    } else {
+    } else if (s.strat === 'wave') {
       const aboveTarget = cur >= s.targetPrice;
       const peakMove    = (s.peakPrice - s.entryPrice) / s.entryPrice;
       const dropFromPeak = (s.peakPrice - cur) / s.peakPrice;
 
-      // Cashout: above target and dropped 0.2% from peak
       if (aboveTarget && dropFromPeak >= WAVE_DROP) {
         clearInterval(s.monitorInterval);
         closeTrade(key, 'wave_cashout', cur, netProfit(peakMove - WAVE_DROP), true, elapsed);
         return;
       }
-      // No separate trailing stop — patience timer at -0.6% handles exits
-      // WAVE has no hard timeout — it waits indefinitely using same patience logic
       if (elapsed > GRACE_MS) {
         if (move <= -PATIENCE_DROP) {
           if (!s.belowDropSince) {
@@ -313,6 +384,48 @@ function startTrade(key) {
             if (s.patienceTimeoutId) { clearTimeout(s.patienceTimeoutId); s.patienceTimeoutId = null; }
           }
         }
+      }
+
+    // ============ PRO STRATEGY ============
+    } else if (s.strat === 'pro') {
+      const profile = PRO_ASSET_PROFILE[s.id] || { stopMult: 1.0, targetMult: 1.0 };
+
+      // WIN: hit target
+      if (cur >= s.targetPrice) {
+        clearInterval(s.monitorInterval);
+        const gain = (cur - s.entryPrice) / s.entryPrice;
+        closeTrade(key, 'pro_target', cur, proNetProfit(gain), true, elapsed);
+        return;
+      }
+
+      // HARD STOP LOSS (active after grace period)
+      if (elapsed > PRO_GRACE_MS && cur <= s.stopPrice) {
+        clearInterval(s.monitorInterval);
+        const loss = (s.entryPrice - cur) / s.entryPrice;
+        const profit = -(WORKING_CAPITAL * loss) - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
+        addLog(`[${s.label}/pro] 🛑 HARD STOP hit @ ${cur.toFixed(4)}`);
+        closeTrade(key, 'stop_loss', cur, profit, false, elapsed);
+        return;
+      }
+
+      // TRAILING STOP: once we're above target, trail with tighter 0.3% from peak
+      const peakMove     = (s.peakPrice - s.entryPrice) / s.entryPrice;
+      const dropFromPeak = (s.peakPrice - cur) / s.peakPrice;
+      if (cur >= s.targetPrice && dropFromPeak >= 0.003) {
+        clearInterval(s.monitorInterval);
+        const gain = (s.peakPrice - s.entryPrice) / s.entryPrice - 0.003;
+        closeTrade(key, 'pro_trail', cur, proNetProfit(Math.max(gain, 0)), true, elapsed);
+        return;
+      }
+
+      // Crash guard mid-trade: if asset suddenly crashes >3% from entry, exit immediately
+      if (elapsed > PRO_GRACE_MS && move <= -(PRO_STOP * profile.stopMult * 1.5)) {
+        clearInterval(s.monitorInterval);
+        const loss = (s.entryPrice - cur) / s.entryPrice;
+        const profit = -(WORKING_CAPITAL * loss) - (WORKING_CAPITAL * TRADE_FEE) - (WORKING_CAPITAL * SPREAD);
+        addLog(`[${s.label}/pro] 💥 Crash exit @ ${cur.toFixed(4)} (move: ${(move*100).toFixed(2)}%)`);
+        closeTrade(key, 'crash_exit', cur, profit, false, elapsed);
+        return;
       }
     }
   }, 2000);
@@ -358,7 +471,6 @@ function connectStockWS() {
   });
   ws.on('close', () => { addLog('⚠️ Finnhub WS closed'); setTimeout(connectStockWS, 5000); });
   ws.on('error', () => ws.close());
-  // Always poll commodities (not on Finnhub free tier)
   pollYahoo(COMMODITIES);
 }
 
@@ -384,19 +496,23 @@ const app = express();
 app.get(['/api/stats', '/crypto/api/stats'], (req, res) => {
   const result = {};
   ALL_ASSETS.forEach(({ id, type, label }) => {
-    ['safe','wave'].forEach(strat => {
+    ['safe','wave','pro'].forEach(strat => {
       const key = `${id}_${strat}`;
       const s = botState[key];
       const cumulative = [];
       let sum = 0;
       for (const t of s.trades) { sum += t.profitUsd; cumulative.push(parseFloat(sum.toFixed(4))); }
 
-      // Patience timer progress for UI
       let patienceProgress = null;
       if (s.belowDropSince) {
         const elapsed = Date.now() - s.belowDropSince;
         patienceProgress = Math.min((elapsed / PATIENCE_MS) * 100, 100);
       }
+
+      // PRO extra info
+      const proProfile = PRO_ASSET_PROFILE[id] || { stopMult: 1.0, targetMult: 1.0 };
+      const inCooldown = strat === 'pro' && s.lastLossTime && (Date.now() - s.lastLossTime < PRO_COOLDOWN_MS);
+      const cooldownRemaining = inCooldown ? Math.ceil((PRO_COOLDOWN_MS - (Date.now() - s.lastLossTime)) / 60000) : 0;
 
       result[key] = {
         label, strat, type,
@@ -406,8 +522,14 @@ app.get(['/api/stats', '/crypto/api/stats'], (req, res) => {
         currentPrice: prices[id] || 0,
         tradeActive: s.tradeActive,
         marketOpen: s.type === 'commodity' ? isCommodityMarketOpen() : isMarketOpen(),
-        patienceProgress,  // null or 0-100%
+        patienceProgress,
         belowDrop: s.belowDropSince !== null,
+        inCooldown,
+        cooldownRemaining,
+        trendUp: isTrendUp(id),
+        crashZone: isInCrashZone(id),
+        stopPrice: s.stopPrice || 0,
+        proProfile,
         trades: s.trades.slice(-30).reverse(),
         cumulative
       };
@@ -420,12 +542,12 @@ app.get(['/api/stats', '/crypto/api/stats'], (req, res) => {
 app.get(['/api/export', '/crypto/api/export'], (req, res) => {
   const exportData = {
     exportedAt: new Date().toISOString(),
-    config: { WORKING_CAPITAL, TRADE_FEE, SPREAD, TARGET, PATIENCE_DROP, PATIENCE_MS, GRACE_MS, WAVE_DROP, VOLATILITY_MIN, SLIPPAGE, OVERNIGHT_FEE },
+    config: { WORKING_CAPITAL, TRADE_FEE, SPREAD, TARGET, PATIENCE_DROP, PATIENCE_MS, GRACE_MS, WAVE_DROP, VOLATILITY_MIN, SLIPPAGE, OVERNIGHT_FEE, PRO_TARGET, PRO_STOP, PRO_COOLDOWN_MS },
     summary: {},
     allTrades: []
   };
   ALL_ASSETS.forEach(({ id, label, type }) => {
-    ['safe','wave'].forEach(strat => {
+    ['safe','wave','pro'].forEach(strat => {
       const key = `${id}_${strat}`;
       const s = botState[key];
       exportData.summary[key] = {
@@ -456,7 +578,8 @@ function getDashboardHTML() { return `<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--bg:#060608;--surface:#0d0d12;--border:#1a1a24;--text:#e8e8f0;--muted:#555566;
---safe:#00e5ff;--wave:#ff6b35;--win:#00ff9d;--loss:#ff3d6b;--gold:#ffd700;
+--safe:#00e5ff;--wave:#ff6b35;--pro:#c084fc;--pro-stop:#ff4d6d;--pro-target:#4ade80;
+--win:#00ff9d;--loss:#ff3d6b;--gold:#ffd700;
 --stock:#a78bfa;--crypto:#f59e0b;--commodity:#34d399;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--bg);font-family:'Space Mono',monospace;color:var(--text);min-height:100vh;}
@@ -486,8 +609,9 @@ body{background:var(--bg);font-family:'Space Mono',monospace;color:var(--text);m
 .section{display:none;}.section.active{display:block;}
 .lb-wrap{padding:1rem 1.5rem;}
 .lb-title{font-family:'Syne',sans-serif;font-size:0.85rem;font-weight:800;margin-bottom:0.7rem;}
-.lb-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-bottom:1.2rem;}
-@media(max-width:560px){.lb-grid{grid-template-columns:1fr;}}
+.lb-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.8rem;margin-bottom:1.2rem;}
+@media(max-width:700px){.lb-grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:460px){.lb-grid{grid-template-columns:1fr;}}
 .lb-table{background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;}
 .lb-table-title{padding:0.45rem 0.8rem;font-size:0.58rem;color:var(--muted);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0.3rem;}
 .strat-dot{width:5px;height:5px;border-radius:50%;display:inline-block;}
@@ -501,21 +625,32 @@ body{background:var(--bg);font-family:'Space Mono',monospace;color:var(--text);m
 .asset-header{display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem;flex-wrap:wrap;}
 .asset-name{font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:800;}
 .asset-price{font-size:0.85rem;color:var(--muted);}
-.strats-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;}
-@media(max-width:600px){.strats-grid{grid-template-columns:1fr;}}
+.strats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.8rem;}
+@media(max-width:900px){.strats-grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:520px){.strats-grid{grid-template-columns:1fr;}}
 .strat-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+.strat-card.pro-card{border-color:#c084fc44;}
 .strat-header{padding:0.6rem 0.8rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:0.4rem;flex-wrap:wrap;}
-.strat-label{font-size:0.62rem;font-weight:700;}.strat-label.safe{color:var(--safe);}.strat-label.wave{color:var(--wave);}
+.strat-label{font-size:0.62rem;font-weight:700;}.strat-label.safe{color:var(--safe);}.strat-label.wave{color:var(--wave);}.strat-label.pro{color:var(--pro);}
 .strat-status{font-size:0.52rem;padding:0.1rem 0.4rem;border-radius:2px;}
 .strat-status.active-trade{background:#00ff9d22;color:var(--win);border:1px solid var(--win);}
 .strat-status.waiting{background:#ffffff11;color:var(--muted);}
 .strat-status.paused{background:#ff3d6b22;color:var(--loss);border:1px solid var(--loss);}
 .strat-status.patience{background:#ffd70022;color:var(--gold);border:1px solid var(--gold);}
+.strat-status.cooldown{background:#c084fc22;color:var(--pro);border:1px solid var(--pro);}
+.strat-status.crash{background:#ff4d6d22;color:var(--pro-stop);border:1px solid var(--pro-stop);}
 .patience-bar-wrap{padding:0.3rem 0.8rem;border-bottom:1px solid var(--border);display:none;}
 .patience-bar-wrap.visible{display:block;}
 .patience-bar-label{font-size:0.48rem;color:var(--gold);margin-bottom:0.2rem;}
 .patience-bar{height:3px;background:#333;border-radius:2px;overflow:hidden;}
 .patience-bar-fill{height:100%;background:var(--gold);transition:width 0.5s;}
+/* PRO info bar */
+.pro-info-bar{padding:0.3rem 0.8rem;border-bottom:1px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap;font-size:0.46rem;}
+.pro-pill{padding:0.1rem 0.35rem;border-radius:2px;}
+.pro-pill.up{background:#4ade8022;color:var(--pro-target);border:1px solid var(--pro-target);}
+.pro-pill.down{background:#ff4d6d22;color:var(--pro-stop);border:1px solid var(--pro-stop);}
+.pro-pill.neutral{background:#c084fc22;color:var(--pro);border:1px solid #c084fc44;}
+.pro-pill.crash{background:#ff4d6d33;color:#ff4d6d;}
 .stats-row{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--border);}
 .stat-box{padding:0.55rem 0.3rem;border-right:1px solid var(--border);text-align:center;}.stat-box:last-child{border-right:none;}
 .stat-val{font-size:0.9rem;font-weight:700;}.stat-lbl{font-size:0.48rem;color:var(--muted);margin-top:0.1rem;}
@@ -529,6 +664,10 @@ td{padding:0.28rem 0.45rem;border-bottom:1px solid #0f0f18;}
 .type-badge.crypto{background:#f59e0b22;color:var(--crypto);border:1px solid var(--crypto);}
 .type-badge.stock{background:#a78bfa22;color:var(--stock);border:1px solid var(--stock);}
 .type-badge.commodity{background:#34d39922;color:var(--commodity);border:1px solid var(--commodity);}
+/* PRO banner */
+.pro-banner{background:linear-gradient(135deg,#c084fc11,#4ade8011);border:1px solid #c084fc33;border-radius:6px;padding:0.8rem 1rem;margin-bottom:1rem;font-size:0.58rem;line-height:1.7;}
+.pro-banner-title{font-family:'Syne',sans-serif;font-size:0.9rem;font-weight:800;color:var(--pro);margin-bottom:0.4rem;}
+.pro-banner b{color:var(--text);}
 .footer{text-align:center;font-size:0.48rem;color:var(--muted);padding:0.7rem;border-top:1px solid var(--border);margin-top:1rem;line-height:1.6;}
 </style>
 </head>
@@ -556,24 +695,28 @@ td{padding:0.28rem 0.45rem;border-bottom:1px solid #0f0f18;}
     <div class="lb-grid">
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--safe)"></span>SAFE</div><div id="lb-crypto-safe"></div></div>
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--wave)"></span>WAVE</div><div id="lb-crypto-wave"></div></div>
+      <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--pro)"></span>PRO</div><div id="lb-crypto-pro"></div></div>
     </div>
     <hr class="divider">
     <div class="lb-title" style="color:var(--stock)">📈 Stocks <span style="font-size:0.6rem;color:var(--muted);font-weight:400">(market hours only)</span></div>
     <div class="lb-grid">
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--safe)"></span>SAFE</div><div id="lb-stock-safe"></div></div>
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--wave)"></span>WAVE</div><div id="lb-stock-wave"></div></div>
+      <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--pro)"></span>PRO</div><div id="lb-stock-pro"></div></div>
     </div>
     <hr class="divider">
     <div class="lb-title" style="color:var(--commodity)">🥇 Commodities <span style="font-size:0.6rem;color:var(--muted);font-weight:400">(Gold, Silver, Oil, Gas)</span></div>
     <div class="lb-grid">
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--safe)"></span>SAFE</div><div id="lb-commodity-safe"></div></div>
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--wave)"></span>WAVE</div><div id="lb-commodity-wave"></div></div>
+      <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--pro)"></span>PRO</div><div id="lb-commodity-pro"></div></div>
     </div>
     <hr class="divider">
     <div class="lb-title">🌍 Overall — All 24 Assets</div>
     <div class="lb-grid">
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--safe)"></span>SAFE</div><div id="lb-all-safe"></div></div>
       <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--wave)"></span>WAVE</div><div id="lb-all-wave"></div></div>
+      <div class="lb-table"><div class="lb-table-title"><span class="strat-dot" style="background:var(--pro)"></span>PRO</div><div id="lb-all-pro"></div></div>
     </div>
   </div>
 </div>
@@ -597,8 +740,8 @@ td{padding:0.28rem 0.45rem;border-bottom:1px solid #0f0f18;}
 </div>
 
 <div class="footer">
-  Auto-refresh 10s · 0.4% target · Patience timer: -1% drop → 24h wait → cashout · 30min grace · WAVE: trailing stop 0.6% · wave drop 0.2%<br>
-  Volatility filter: skips trades when market moves &lt;0.2% in 30min · $100/asset/strategy · 24 assets total<br>
+  Auto-refresh 10s · SAFE: 0.4% target · patience -0.6% / 24h wait · WAVE: trailing 0.2% from peak<br>
+  PRO: 0.6% target · 0.4% hard stop · trend filter · crash guard · 10min loss cooldown · per-asset risk profiles<br>
   Stocks &amp; Commodities: Mon–Fri 9:30am–4pm ET · Tunisia brokers: AvaTrade · XTB · Interactive Brokers
 </div>
 
@@ -643,17 +786,21 @@ function buildPanel(id, label, type) {
   <div class="strats-grid">
     \${buildCard(id,'safe')}
     \${buildCard(id,'wave')}
+    \${buildCard(id,'pro')}
   </div>\`;
 }
 
 function buildCard(id, strat) {
   const key = id+'_'+strat;
-  const icon = strat==='safe'?'🛡':'🌊';
+  const icon = strat==='safe'?'🛡':strat==='wave'?'🌊':'🧠';
   const desc = strat==='safe'
-    ? 'Target +0.4% · Patience -1% / 24h'
-    : 'Ride wave · Exit on 0.2% drop from peak';
+    ? 'Target +0.4% · Patience -0.6% / 24h'
+    : strat==='wave'
+    ? 'Ride wave · Exit on 0.2% drop from peak'
+    : 'Trend+Crash filter · +0.6% TP · -0.4% SL hard stop';
+  const extraClass = strat==='pro'?' pro-card':'';
   return \`
-  <div class="strat-card">
+  <div class="strat-card\${extraClass}">
     <div class="strat-header">
       <div>
         <div class="strat-label \${strat}">\${icon} \${strat.toUpperCase()}</div>
@@ -661,6 +808,11 @@ function buildCard(id, strat) {
       </div>
       <div class="strat-status waiting" id="status-\${key}">Waiting</div>
     </div>
+    \${strat==='pro' ? \`<div class="pro-info-bar" id="proinfo-\${key}">
+      <span class="pro-pill neutral" id="protrend-\${key}">— trend</span>
+      <span class="pro-pill neutral" id="procrash-\${key}">— zone</span>
+      <span class="pro-pill neutral" id="procool-\${key}">— cooldown</span>
+    </div>\` : ''}
     <div class="patience-bar-wrap" id="pbwrap-\${key}">
       <div class="patience-bar-label" id="pblabel-\${key}">⏳ Patience timer: 0%</div>
       <div class="patience-bar"><div class="patience-bar-fill" id="pbfill-\${key}" style="width:0%"></div></div>
@@ -716,6 +868,10 @@ function updateCard(key, d) {
   if (se) {
     if ((d.type==='stock'||d.type==='commodity') && !d.marketOpen) {
       se.textContent='Market Closed'; se.className='strat-status paused';
+    } else if (d.strat === 'pro' && d.inCooldown) {
+      se.textContent=\`⏳ Cooldown \${d.cooldownRemaining}m\`; se.className='strat-status cooldown';
+    } else if (d.strat === 'pro' && d.crashZone) {
+      se.textContent='🚨 Crash Zone'; se.className='strat-status crash';
     } else if (d.tradeActive && d.belowDrop) {
       se.textContent='⏳ Patience...'; se.className='strat-status patience';
     } else if (d.tradeActive) {
@@ -725,7 +881,17 @@ function updateCard(key, d) {
     }
   }
 
-  // Patience progress bar
+  // PRO info pills
+  if (d.strat === 'pro') {
+    const trendEl = document.getElementById('protrend-'+key);
+    const crashEl = document.getElementById('procrash-'+key);
+    const coolEl  = document.getElementById('procool-'+key);
+    if (trendEl) { trendEl.textContent = d.trendUp ? '📈 uptrend' : '📉 downtrend'; trendEl.className = 'pro-pill '+(d.trendUp?'up':'down'); }
+    if (crashEl) { crashEl.textContent = d.crashZone ? '🚨 crash zone' : '✅ safe zone'; crashEl.className = 'pro-pill '+(d.crashZone?'crash':'up'); }
+    if (coolEl)  { coolEl.textContent = d.inCooldown ? \`⏳ \${d.cooldownRemaining}m cooldown\` : '✅ ready'; coolEl.className = 'pro-pill '+(d.inCooldown?'neutral':'up'); }
+  }
+
+  // Patience bar
   const pbwrap = document.getElementById('pbwrap-'+key);
   const pbfill = document.getElementById('pbfill-'+key);
   const pblabel = document.getElementById('pblabel-'+key);
@@ -742,7 +908,7 @@ function updateCard(key, d) {
   const canvas = document.getElementById('chart-'+key);
   if (canvas) {
     if (charts[key]) charts[key].destroy();
-    const color = key.endsWith('safe') ? '#00e5ff' : '#ff6b35';
+    const color = key.endsWith('safe') ? '#00e5ff' : key.endsWith('wave') ? '#ff6b35' : '#c084fc';
     charts[key] = new Chart(canvas.getContext('2d'), {
       type:'line',
       data:{ labels:d.cumulative.map((_,i)=>i+1), datasets:[{data:d.cumulative,borderColor:color,backgroundColor:color+'22',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5}] },
@@ -791,20 +957,18 @@ async function fetchData() {
     const mb = document.getElementById('marketBadge');
     if (mb) { mb.textContent=json.marketOpen?'🟢 Market Open':'🔴 Market Closed'; mb.className='mkt-badge '+(json.marketOpen?'open':'closed'); }
 
-    // Update all asset panels
     json.allAssets.forEach(({id, type}) => {
       const priceEl = document.getElementById('price-'+id);
       if (priceEl) priceEl.textContent = fmtPrice(json.prices[id]);
       const mktEl = document.getElementById('mkt-'+id);
       if (mktEl) { mktEl.textContent=json.marketOpen?'🟢 Open':'🔴 Closed'; mktEl.className='mkt-badge '+(json.marketOpen?'open':'closed'); }
-      ['safe','wave'].forEach(strat => {
+      ['safe','wave','pro'].forEach(strat => {
         const key = id+'_'+strat;
         if (data[key]) updateCard(key, data[key]);
       });
     });
 
-    // Build all leaderboards
-    ['safe','wave'].forEach(strat => {
+    ['safe','wave','pro'].forEach(strat => {
       const make = (ids, labelMap, type) => ids.map(id => ({
         coin: labelMap[id], profit: data[id+'_'+strat]?.totalProfit||0,
         winRate: data[id+'_'+strat]?.winRate||0, trades: data[id+'_'+strat]?.totalTrades||0, type
@@ -845,7 +1009,7 @@ app.listen(3000, () => addLog('🚀 Dashboard on port 3000'));
 
 setTimeout(() => {
   ALL_ASSETS.forEach(({ id }) => {
-    ['safe','wave'].forEach(strat => {
+    ['safe','wave','pro'].forEach(strat => {
       setTimeout(() => startTrade(`${id}_${strat}`), Math.random() * 15000);
     });
   });
